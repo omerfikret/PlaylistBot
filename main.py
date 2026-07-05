@@ -115,13 +115,17 @@ def get_track_id(sp, track_name, artist_name):
 # -------------------------------
 def create_playlist_and_add_tracks(sp, playlist_name, track_ids, description=""):
     try:
-        user_id = sp.me()["id"]
-        playlist = sp.user_playlist_create(
-            user=user_id,
-            name=playlist_name,
-            public=False,
-            description=description
-        )
+        # NOT: Spotify, Şubat 2026 migration'ında POST /users/{user_id}/playlists
+        # endpoint'ini tamamen KALDIRDI (son geçiş tarihi 9 Mart 2026).
+        # spotipy'nin sp.user_playlist_create() metodu hâlâ o eski endpoint'i
+        # çağırıyor, bu yüzden scope/allowlist doğru olsa bile 403 dönüyordu.
+        # Yeni doğru endpoint: POST /me/playlists
+        payload = {
+            "name": playlist_name,
+            "public": False,
+            "description": description
+        }
+        playlist = sp._post("me/playlists", payload=payload)
         playlist_id = playlist["id"]
 
         for i in range(0, len(track_ids), 100):
