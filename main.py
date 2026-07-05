@@ -2,11 +2,6 @@ import os
 import random
 import time
 import json
-import base64
-import requests
-import webbrowser
-from urllib.parse import urlencode
-
 import pandas as pd
 import numpy as np
 import spotipy
@@ -50,7 +45,7 @@ def find_closest_songs(df, features, target_energy, target_valence, weights, top
 
 
 # -------------------------------
-# 3. SPOTIFY BAĞLANTISI (GARANTİLİ)
+# 3. SPOTIFY BAĞLANTISI (GÜNCELLENDİ - DOĞRU SCOPE)
 # -------------------------------
 def get_spotify_client():
     client_id = os.getenv("SPOTIPY_CLIENT_ID")
@@ -58,82 +53,48 @@ def get_spotify_client():
     redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
 
     if not client_id or not client_secret or not redirect_uri:
-        raise ValueError("Eksik çevresel değişkenler!")
+        raise ValueError("Eksik çevresel değişkenler! Lütfen .env dosyasını kontrol edin.")
 
-    # Önce cache'den dene
-    cache_file = ".spotify_cache"
-    if os.path.exists(cache_file):
-        with open(cache_file, "r") as f:
-            token_info = json.load(f)
-        if "access_token" in token_info:
-            expires_at = token_info.get("expires_at", 0)
-            if expires_at > time.time():
-                print("✅ Önbellekten token alındı.")
-                return spotipy.Spotify(auth=token_info["access_token"])
+    try:
+        auth_manager = SpotifyOAuth(
+            client_id=client_id,
+            client_secret=client_secret,
+            redirect_uri=redirect_uri,
+            scope="playlist-modify-public playlist-modify-private",  # DOĞRU SCOPE
+            cache_path=".spotify_cache",
+            open_browser=True,
+            show_dialog=True
+        )
 
-    # Yeni token al
-    scope = "playlist-modify-public playlist-modify-private"
-    auth_url = "https://accounts.spotify.com/authorize?" + urlencode({
-        "client_id": client_id,
-        "response_type": "code",
-        "redirect_uri": redirect_uri,
-        "scope": scope,
-        "show_dialog": "true"
-    })
+        sp = spotipy.Spotify(auth_manager=auth_manager)
 
-    print("\n" + "="*60)
-    print("🔐 Spotify Yetkilendirme")
-    print("="*60)
-    print("\n1. Tarayıcıda aşağıdaki URL'yi açın:")
-    print(f"\n   {auth_url}\n")
-    print("2. Spotify izin ekranında TÜM kutucukları işaretleyip 'Kabul Et' deyin.")
-    print("3. Sonra adres çubuğundaki 'code=' kısmından sonraki kodu kopyalayın.")
-    print("   ⚠️ ACELE EDİN! Code 1-2 dakika geçerli!")
-    print("\n" + "="*60)
+        # Token'ı test et
+        user = sp.me()
+        print(f"\n✅ Spotify'a başarıyla bağlanıldı! Kullanıcı: {user['display_name']} (ID: {user['id']})")
+        return sp
 
-    code = input("\n➡️  Kodu yapıştırın: ").strip()
-
-    # Token al
-    auth_header = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-    token_url = "https://accounts.spotify.com/api/token"
-    
-    response = requests.post(
-        token_url,
-        data={
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri
-        },
-        headers={
-            "Authorization": f"Basic {auth_header}",
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
-    )
-
-    if response.status_code != 200:
-        print("\n❌ Token alınamadı!")
-        print("Hata:", response.json())
-        print("\n💡 İpuçları:")
-        print("   - Code'u doğru kopyaladığından emin ol")
-        print("   - Çok beklediysen code süresi dolmuş olabilir")
-        print("   - Redirect URI'lerin eşleştiğinden emin ol")
+    except spotipy.exceptions.SpotifyException as e:
+        print("\n❌ Spotify bağlantı hatası:")
+        print(f"   Hata kodu: {e.http_status}")
+        print(f"   Mesaj: {e.msg}")
+        if e.http_status == 403:
+            print("\n🔑 403 Forbidden hatası!")
+            print("   Bu hata genellikle şu nedenlerle oluşur:")
+            print("   1. Spotify Dashboard'da kullanıcınız (ID: 31nv2nkr3nyey353s7fmrlospapa) 'User Management'a eklenmemiş.")
+            print("   2. Uygulama Development modunda ve siz allowlist'te değilsiniz.")
+            print("   3. Token'da 'playlist-modify-private' scope'u eksik.")
+            print("\n   Çözüm:")
+            print("   - Dashboard > Settings > User Management > Add user")
+            print("   - Kullanıcı ID'sini (31nv2nkr3nyey353s7fmrlospapa) ekleyin.")
+            print("   - .spotify_cache dosyasını silip yeniden deneyin.")
         return None
-
-    token_info = response.json()
-    token_info["expires_at"] = time.time() + token_info.get("expires_in", 3600)
-    
-    print("\n✅ Token başarıyla alındı!")
-    print("🔍 Alınan scope:", token_info.get("scope"))
-
-    # Cache'e kaydet
-    with open(cache_file, "w") as f:
-        json.dump(token_info, f)
-
-    return spotipy.Spotify(auth=token_info["access_token"])
+    except Exception as e:
+        print(f"\n❌ Beklenmeyen hata: {e}")
+        return None
 
 
 # -------------------------------
-# 4. ŞARKI ARAMA VE ID ALMA
+# 4. ŞARKI ARAMA
 # -------------------------------
 def get_track_id(sp, track_name, artist_name):
     query = f"track:{track_name} artist:{artist_name}"
@@ -150,25 +111,36 @@ def get_track_id(sp, track_name, artist_name):
 
 
 # -------------------------------
-# 5. ÇALMA LİSTESİ OLUŞTUR
+# 5. ÇALMA LİSTESİ OLUŞTUR (SPOTIPY NATIVE)
 # -------------------------------
 def create_playlist_and_add_tracks(sp, playlist_name, track_ids, description=""):
-    user_id = sp.me()["id"]
-    
-    playlist = sp.user_playlist_create(
-        user=user_id,
-        name=playlist_name,
-        public=False,  # Gizli oluştur
-        description=description
-    )
-    playlist_id = playlist["id"]
+    try:
+        user_id = sp.me()["id"]
+        playlist = sp.user_playlist_create(
+            user=user_id,
+            name=playlist_name,
+            public=False,
+            description=description
+        )
+        playlist_id = playlist["id"]
 
-    for i in range(0, len(track_ids), 100):
-        sp.playlist_add_items(playlist_id, track_ids[i:i+100])
+        for i in range(0, len(track_ids), 100):
+            sp.playlist_add_items(playlist_id, track_ids[i:i+100])
 
-    print(f"\n✅ Çalma listesi oluşturuldu!")
-    print(f"🔗 Link: {playlist['external_urls']['spotify']}")
-    return playlist_id
+        print(f"\n✅ Çalma listesi oluşturuldu!")
+        print(f"🔗 Link: {playlist['external_urls']['spotify']}")
+        return playlist_id
+
+    except spotipy.exceptions.SpotifyException as e:
+        if e.http_status == 403:
+            print("\n❌ 403 Forbidden: Playlist oluşturma yetkisi yok!")
+            print("   Muhtemel nedenler:")
+            print("   1. Kullanıcı ID'niz Dashboard'da allowlist'e eklenmemiş.")
+            print("   2. Token'da 'playlist-modify-private' scope'u eksik.")
+            print("   3. Spotify hesabınız Premium değil (Development modunda Premium gerekli).")
+        else:
+            print(f"\n❌ Spotify hatası (HTTP {e.http_status}): {e.msg}")
+        raise
 
 
 # -------------------------------
@@ -289,8 +261,6 @@ def main():
     if sp is None:
         print("❌ Spotify bağlantısı başarısız, program sonlandırılıyor.")
         return
-
-    print("\n🔐 Spotify'a başarıyla bağlanıldı.")
 
     # Şarkı ID'lerini al
     print("\n🔍 Şarkılar Spotify'da aranıyor...")
