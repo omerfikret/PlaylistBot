@@ -203,8 +203,30 @@ def main():
         target_energy = get_scaled_input("Aktivite (1: sakin, 10: enerjik): ")
         weights = (1.0, 1.0)
 
-    # KNN ile 20 şarkı bul
-    result = find_closest_songs(df, features, target_energy, target_valence, weights, top_n=20)
+    # Çalma listesi ismi
+    while True:
+        playlist_name = input("\n📝 Çalma listesine bir isim ver: ").strip()
+        if playlist_name:
+            break
+        print("Lütfen boş olmayan bir isim gir.")
+
+    # Kaç şarkı olacak?
+    while True:
+        try:
+            total_songs = int(input("🎶 Çalma listesinde kaç şarkı olsun? (en az 5): "))
+            if total_songs >= 5:
+                break
+            print("Lütfen en az 5 gir.")
+        except ValueError:
+            print("Geçersiz giriş, lütfen bir tam sayı gir.")
+
+    # Toplam şarkı sayısına göre KNN / hedef sanatçı oranını böl (yaklaşık %80 - %20)
+    bonus_count = max(1, round(total_songs * 0.2))
+    bonus_count = min(bonus_count, 10)
+    knn_count = total_songs - bonus_count
+
+    # KNN ile en yakın şarkıları bul
+    result = find_closest_songs(df, features, target_energy, target_valence, weights, top_n=knn_count)
 
     # Hedef sanatçılardan 5 şarkı ekle
     target_artists = [
@@ -234,8 +256,9 @@ def main():
                 candidate_indices.append((idx, dist))
 
         if candidate_indices:
-            top_candidates = candidate_indices[:min(10, len(candidate_indices))]
-            num_to_add = min(5, len(top_candidates))
+            pool_size = min(bonus_count * 2, len(candidate_indices))
+            top_candidates = candidate_indices[:pool_size]
+            num_to_add = min(bonus_count, len(top_candidates))
             if num_to_add > 0:
                 selected = random.sample(top_candidates, num_to_add)
                 added_songs = []
@@ -285,9 +308,8 @@ def main():
         print("\n❌ Hiçbir şarkı Spotify'da bulunamadı!")
         return
 
-    # Çalma listesi oluştur
-    playlist_name = f"KNN Öneri Listesi (mod {mode})"
-    description = f"KNN ile oluşturuldu. Enerji: {target_energy:.2f}, Valans: {target_valence:.2f}"
+    # Çalma listesi oluştur (isim kullanıcıdan alındı, açıklama sade tutuluyor)
+    description = "Senin için özel olarak hazırlandı 🎧"
 
     print("\n📁 Çalma listesi oluşturuluyor...")
     create_playlist_and_add_tracks(sp, playlist_name, track_ids, description)
