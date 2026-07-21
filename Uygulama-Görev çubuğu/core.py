@@ -20,12 +20,6 @@ import pandas as pd
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
-TARGET_ARTISTS = [
-    "Ezhel", "Motive", "UZI", "maNga", "Duman", "mor ve ötesi",
-    "Tarkan", "Sezen Aksu", "Mert Demir", "Melike Şahin", "Mabel Matiz",
-    "Dolu Kadehi Ters Tut", "Adamlar", "Yüzyüzeyken Konuşuruz"
-]
-
 
 def _noop_log(msg):
     pass
@@ -171,40 +165,5 @@ def build_result_dataframe(df, features, mode, target_energy, target_valence, we
     knn_count = total_songs - bonus_count
 
     result = find_closest_songs(df, features, target_energy, target_valence, weights, top_n=knn_count)
-
-    target_mask = df['artists'].isin(TARGET_ARTISTS)
-    target_songs = df[target_mask].copy()
-
-    if not target_songs.empty:
-        target_features = target_songs[['energy', 'valence']].values.astype(float)
-        w_e, w_v = weights
-        distances = []
-        for idx, (energy, valence) in enumerate(target_features):
-            dist = np.sqrt(w_e * (energy - target_energy) ** 2 + w_v * (valence - target_valence) ** 2)
-            original_idx = target_songs.index[idx]
-            distances.append((original_idx, dist))
-
-        distances.sort(key=lambda x: x[1])
-        knn_keys = set(zip(result['track_name'], result['artists']))
-        candidate_indices = []
-        for idx, dist in distances:
-            row = target_songs.loc[idx]
-            if (row['track_name'], row['artists']) not in knn_keys:
-                candidate_indices.append((idx, dist))
-
-        if candidate_indices:
-            pool_size = min(bonus_count * 2, len(candidate_indices))
-            top_candidates = candidate_indices[:pool_size]
-            num_to_add = min(bonus_count, len(top_candidates))
-            if num_to_add > 0:
-                selected = random.sample(top_candidates, num_to_add)
-                added_songs = []
-                for idx, dist in selected:
-                    row = target_songs.loc[idx].copy()
-                    row['distance'] = dist
-                    added_songs.append(row)
-                added_df = pd.DataFrame(added_songs)
-                result = pd.concat([result, added_df], ignore_index=True)
-                log(f"✨ Hedef sanatçılardan {num_to_add} şarkı eklendi.")
 
     return result

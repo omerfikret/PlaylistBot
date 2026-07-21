@@ -156,7 +156,7 @@ def main():
     print("="*60)
 
     # Veriyi yükle
-    df, features = load_and_clean_data('datasets/envanter_özel.csv')
+    df, features = load_and_clean_data('Uygulama-Görev çubuğu/my_spotify_libary.csv')
 
     # Mod seçimi
     print("\nLütfen bir mod seçin:")
